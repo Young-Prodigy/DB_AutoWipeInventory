@@ -11,6 +11,10 @@ local BroughtMobs = {} -- Keep track of brought mobs to avoid duplicate processi
 local AutoRebirthEnabled = false
 local AutoRebirthThread = nil
 local AutoRebirthDelay = 500 -- default seconds
+local AutoMaxStatsRebirthEnabled = false
+local AutoMaxStatsRebirthThread = nil
+local MaxStatCap = 2_000_000_000
+local RequiredStats = { "Agility", "Strength", "Ki", "Endurance" }
 
 local Players = game:GetService("Players")
 local Workspace = game:GetService("Workspace")
@@ -20,7 +24,6 @@ local Root = Character:WaitForChild("HumanoidRootPart")
 local MobsFolder = Workspace:WaitForChild("World Mobs"):WaitForChild("Mobs")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local SkillRemote = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("SkillRemote")
-
 
 local GamePasses = {
 	"2x Luck",
@@ -102,6 +105,99 @@ local function AutoRebirth()
 	pcall(function()
 		rebirthRemote:InvokeServer(unpack(args))
 	end)
+end
+
+local function AllStatsAreMax()
+	local stats = game.Players.LocalPlayer:FindFirstChild("Stats")
+	if not stats then return false end
+
+	for _, statName in ipairs(RequiredStats) do
+		local stat = stats:FindFirstChild(statName)
+		if not stat or not (stat:IsA("IntValue") or stat:IsA("NumberValue")) or stat.Value < MaxStatCap then
+			return false
+		end
+	end
+	
+	return true
+end
+
+local function StartAutoMaxStatRebirth()
+	if AutoMaxStatsRebirthThread and coroutine.status(AutoMaxStatsRebirthThread) == "running" then 
+		return 
+	end
+
+	AutoMaxStatsRebirthThread = coroutine.create(function()
+		while AutoMaxStatsRebirthEnabled do
+			if AllStatsAreMax() then
+				AutoRebirth()
+				-- Wait a bit after rebirth to let stats reset
+				task.wait(15)
+			else
+			end
+			task.wait(10)
+		end
+	end)
+
+	coroutine.resume(AutoMaxStatsRebirthThread)
+end
+
+local function StopAutoMaxStatRebirth()
+	AutoMaxStatsRebirthEnabled = false
+	if AutoMaxStatsRebirthThread then
+		coroutine.close(AutoMaxStatsRebirthThread)
+		AutoMaxStatsRebirthThread = nil
+	end
+end
+
+-- Alternative version if stats are stored differently
+local function AllStatsAreMaxAlternative()
+	local player = game.Players.LocalPlayer
+	
+	-- Try different possible locations for stats
+	local statsLocations = {
+		player:FindFirstChild("Stats"),
+		player:FindFirstChild("leaderstats"),
+		player.Character and player.Character:FindFirstChild("Stats")
+	}
+	
+	local stats = nil
+	for _, location in ipairs(statsLocations) do
+		if location then
+			stats = location
+			break
+		end
+	end
+	
+	if not stats then
+		return false
+	end
+	
+	
+	for _, statName in ipairs(RequiredStats) do
+		local stat = stats:FindFirstChild(statName)
+		if not stat then
+			return false
+		end
+		
+		-- Handle different types of stat objects
+		local statValue
+		if stat:IsA("NumberValue") then
+			statValue = stat.Value
+		elseif stat:IsA("IntValue") then
+			statValue = stat.Value
+		elseif stat:IsA("StringValue") then
+			statValue = tonumber(stat.Value)
+		else
+			return false
+		end
+		
+		if not statValue or statValue < MaxStatCap then
+			return false
+		end
+		
+	end
+	
+	return true
 end
 
 -- Extracts unique mob names for dropdown use
@@ -630,5 +726,27 @@ Tab:CreateToggle({
 		else
 			AutoRebirthThread = nil
 		end
+	end
+})
+
+Tab:CreateToggle({
+	Name = "Auto Rebirth (All Stats Max)",
+	CurrentValue = false,
+	Flag = "AutoMaxStatRebirth",
+	Callback = function(Value)
+		AutoMaxStatsRebirthEnabled = Value
+
+		if Value then
+			StartAutoMaxStatRebirth()
+		else
+			StopAutoMaxStatRebirth()
+		end
+
+		Rayfield:Notify({
+			Title = "Max Stat Rebirth",
+			Content = Value and "Enabled - Will rebirth when all stats reach 2B" or "Disabled",
+			Duration = 3,
+			Image = 4483362458
+		})
 	end
 })
