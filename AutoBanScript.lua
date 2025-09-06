@@ -25,6 +25,34 @@ local MobsFolder = Workspace:WaitForChild("World Mobs"):WaitForChild("Mobs")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local SkillRemote = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("SkillRemote")
 
+-- Dynamic root position function
+local function GetCurrentRoot()
+    local player = game.Players.LocalPlayer
+    if player and player.Character then
+        return player.Character:FindFirstChild("HumanoidRootPart")
+    end
+    return nil
+end
+
+-- Setup player respawn detection
+local function SetupPlayerRespawnDetection()
+    local player = game.Players.LocalPlayer
+    
+    if player then
+        player.CharacterAdded:Connect(function()
+            -- Clear brought mobs when player respawns
+            BroughtMobs = {}
+            print("Player respawned - cleared brought mobs tracking")
+        end)
+        
+        -- Also clear when character is removed (death)
+        player.CharacterRemoving:Connect(function()
+            BroughtMobs = {}
+            print("Player character removing - cleared brought mobs tracking")
+        end)
+    end
+end
+
 local GamePasses = {
 	"2x Luck",
 	"Instant Transformation",
@@ -216,12 +244,14 @@ local function GetUniqueMobNames()
 	return unique
 end
 
--- NEW: Bring mob to player instead of teleporting to mob
+-- UPDATED: Bring mob to player using dynamic root position
 local function BringMobToPlayer(mob)
 	local mobRoot = mob:FindFirstChild("HumanoidRootPart")
-	if mobRoot and Root then
-		local frontPosition = Root.Position + (Root.CFrame.LookVector * 5) + Vector3.new(0, 1, 0)
-		mobRoot.CFrame = CFrame.new(frontPosition, Root.Position)
+	local currentRoot = GetCurrentRoot() -- Use dynamic root
+	
+	if mobRoot and currentRoot then
+		local frontPosition = currentRoot.Position + (currentRoot.CFrame.LookVector * 5) + Vector3.new(0, 1, 0)
+		mobRoot.CFrame = CFrame.new(frontPosition, currentRoot.Position)
 		
 		-- Disable mob's ability to move (optional)
 		local mobHumanoid = mob:FindFirstChildOfClass("Humanoid")
@@ -230,28 +260,39 @@ local function BringMobToPlayer(mob)
 			mobHumanoid.WalkSpeed = 0
 			mobHumanoid.JumpPower = 0
 		end
-			task.spawn(function()
-		while mob and mob.Parent and mobHumanoid.Health > 0 do
-			local frontPosition = Root.Position + (Root.CFrame.LookVector * 6)
-			mobRoot.CFrame = CFrame.new(frontPosition, Root.Position)
-			task.wait()
-		end
+		
+		task.spawn(function()
+			while mob and mob.Parent and mobHumanoid and mobHumanoid.Health > 0 do
+				local liveRoot = GetCurrentRoot() -- Get fresh root each iteration
+				if not liveRoot then break end -- Player doesn't exist, stop
+				
+				local frontPosition = liveRoot.Position + (liveRoot.CFrame.LookVector * 6)
+				mobRoot.CFrame = CFrame.new(frontPosition, liveRoot.Position)
+				task.wait()
+			end
 
-		-- Optional: Re-enable mob behavior after loop ends
-		if mobHumanoid then
-			mobHumanoid.PlatformStand = false
-			mobHumanoid.WalkSpeed = 16
-			mobHumanoid.JumpPower = 50
-		end
-    end)
+			-- Optional: Re-enable mob behavior after loop ends
+			if mobHumanoid then
+				mobHumanoid.PlatformStand = false
+				mobHumanoid.WalkSpeed = 16
+				mobHumanoid.JumpPower = 50
+			end
+		end)
 		return true
 	end
 	return false
 end
 
+-- UPDATED: Bring all mobs in range using dynamic root position
 local function BringAllMobsInRange(maxDistance)
     maxDistance = maxDistance or BringAllMobsDistance
-    local playerPos = Root.Position
+    local currentRoot = GetCurrentRoot()
+    
+    if not currentRoot then
+        return 0 -- Player doesn't exist, can't bring mobs
+    end
+    
+    local playerPos = currentRoot.Position
     local mobsBrought = 0
     
     -- Function to process mobs from a folder
@@ -287,6 +328,9 @@ local function BringAllMobsInRange(maxDistance)
         -- Process boss mobs
         local bossMobs = mobsFolder:FindFirstChild("Boss Mobs")
         processMobFolder(bossMobs, "Boss Mobs")
+
+        local eventMobs = mobsFolder:FindFirstChild("Event Mobs")
+        processMobFolder(eventMobs, "Event Mobs")
     end
     
     return mobsBrought
@@ -307,7 +351,7 @@ local function StartBringAllMobs()
                 
             end
             
-            task.wait(1) -- Check for new mobs every 2 seconds
+            task.wait(1)
         end
     end)
     
@@ -327,23 +371,29 @@ local function StopBringAllMobs()
     BroughtMobs = {}
 end
 
+-- UPDATED: Teleport behind mob using dynamic root position
 local function TeleportBehindMob(mob)
 	local hrp = mob:FindFirstChild("HumanoidRootPart")
-	if hrp and Root then
+	local currentRoot = GetCurrentRoot() -- Use dynamic root
+	
+	if hrp and currentRoot then
 		local behind = hrp.Position - (hrp.CFrame.LookVector * 3) + Vector3.new(0, 2, 0)
-		Root.CFrame = CFrame.new(behind, hrp.Position)
+		currentRoot.CFrame = CFrame.new(behind, hrp.Position)
 		return true
 	end
 	return false
 end
 
+-- UPDATED: Lock on mob using dynamic root position
 local function LockOnMob(mob)
 	task.spawn(function()
 		while AutoFarm and mob and mob:FindFirstChild("HumanoidRootPart") and mob:FindFirstChildOfClass("Humanoid") and mob:FindFirstChildOfClass("Humanoid").Health > 0 do
 			local mobHRP = mob:FindFirstChild("HumanoidRootPart")
-			if mobHRP and Root then
-				local currentPos = Root.Position
-				Root.CFrame = CFrame.new(currentPos, mobHRP.Position)
+			local currentRoot = GetCurrentRoot() -- Use dynamic root
+			
+			if mobHRP and currentRoot then
+				local currentPos = currentRoot.Position
+				currentRoot.CFrame = CFrame.new(currentPos, mobHRP.Position)
 			end
 			task.wait()
 		end
@@ -452,6 +502,9 @@ _G.MobFarmAPI = {
 		_G.MobFarmAPI.UseBringMob = state
 	end
 }
+
+-- Initialize respawn detection
+SetupPlayerRespawnDetection()
 
 local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
 
