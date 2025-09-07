@@ -15,6 +15,11 @@ local AutoMaxStatsRebirthEnabled = false
 local AutoMaxStatsRebirthThread = nil
 local MaxStatCap = 2_000_000_000
 local RequiredStats = { "Agility", "Strength", "Ki", "Endurance" }
+local MobBringOffset = {
+    X = 0,  -- Side offset (left/right)
+    Y = 1,  -- Height offset (up/down)
+    Z = 6   -- Distance offset (forward/backward)
+}
 
 local Players = game:GetService("Players")
 local Workspace = game:GetService("Workspace")
@@ -250,8 +255,13 @@ local function BringMobToPlayer(mob)
 	local currentRoot = GetCurrentRoot() -- Use dynamic root
 	
 	if mobRoot and currentRoot then
-		local frontPosition = currentRoot.Position + (currentRoot.CFrame.LookVector * 5) + Vector3.new(0, 1, 0)
-		mobRoot.CFrame = CFrame.new(frontPosition, currentRoot.Position)
+		-- Calculate position using configurable offset
+		local rightVector = currentRoot.CFrame.RightVector * MobBringOffset.X
+		local upVector = Vector3.new(0, MobBringOffset.Y, 0)
+		local forwardVector = currentRoot.CFrame.LookVector * MobBringOffset.Z
+		
+		local offsetPosition = currentRoot.Position + rightVector + upVector + forwardVector
+		mobRoot.CFrame = CFrame.new(offsetPosition, currentRoot.Position)
 		
 		-- Disable mob's ability to move (optional)
 		local mobHumanoid = mob:FindFirstChildOfClass("Humanoid")
@@ -266,8 +276,13 @@ local function BringMobToPlayer(mob)
 				local liveRoot = GetCurrentRoot() -- Get fresh root each iteration
 				if not liveRoot then break end -- Player doesn't exist, stop
 				
-				local frontPosition = liveRoot.Position + (liveRoot.CFrame.LookVector * 6)
-				mobRoot.CFrame = CFrame.new(frontPosition, liveRoot.Position)
+				-- Calculate position using live offset values
+				local rightVector = liveRoot.CFrame.RightVector * MobBringOffset.X
+				local upVector = Vector3.new(0, MobBringOffset.Y, 0)
+				local forwardVector = liveRoot.CFrame.LookVector * MobBringOffset.Z
+				
+				local offsetPosition = liveRoot.Position + rightVector + upVector + forwardVector
+				mobRoot.CFrame = CFrame.new(offsetPosition, liveRoot.Position)
 				task.wait()
 			end
 
@@ -282,6 +297,7 @@ local function BringMobToPlayer(mob)
 	end
 	return false
 end
+
 
 -- UPDATED: Bring all mobs in range using dynamic root position
 local function BringAllMobsInRange(maxDistance)
@@ -626,7 +642,7 @@ Tab:CreateToggle({
 			AutoAttackThread = coroutine.create(function()
 				while AutoAttackEnabled do
 					AutoAttack()
-					task.wait() -- adjust delay as needed
+					task.wait(.5) -- adjust delay as needed
 				end
 			end)
 
@@ -696,6 +712,61 @@ Tab:CreateButton({
         Rayfield:Notify({
             Title = "Reset Complete",
             Content = "Cleared mob tracking - will re-bring all mobs in range",
+            Duration = 2,
+            Image = 4483362458,
+        })
+    end,
+})
+
+Tab:CreateSlider({
+    Name = "Mob X Offset (Left/Right)",
+    Range = {-20, 20},
+    Increment = 1,
+    CurrentValue = MobBringOffset.X,
+    Flag = "MobXOffset",
+    Callback = function(Value)
+        MobBringOffset.X = Value
+    end,
+})
+
+-- Y Offset (Up/Down)
+Tab:CreateSlider({
+    Name = "Mob Y Offset (Up/Down)",
+    Range = {-10, 20},
+    Increment = 1,
+    CurrentValue = MobBringOffset.Y,
+    Flag = "MobYOffset",
+    Callback = function(Value)
+        MobBringOffset.Y = Value
+    end,
+})
+
+-- Z Offset (Forward/Backward)
+Tab:CreateSlider({
+    Name = "Mob Z Offset (Distance)",
+    Range = {1, 30},
+    Increment = 1,
+    CurrentValue = MobBringOffset.Z,
+    Flag = "MobZOffset",
+    Callback = function(Value)
+        MobBringOffset.Z = Value
+    end,
+})
+
+-- Reset button for default values
+Tab:CreateButton({
+    Name = "Reset Mob Position to Default",
+    Callback = function()
+        MobBringOffset.X = 0
+        MobBringOffset.Y = 1
+        MobBringOffset.Z = 6
+        
+        -- Update the sliders to reflect the reset values
+        -- Note: You might need to store references to the sliders if you want to update them programmatically
+        
+        Rayfield:Notify({
+            Title = "Mob Position Reset",
+            Content = "Mob offset reset to default (0, 1, 6)",
             Duration = 2,
             Image = 4483362458,
         })
